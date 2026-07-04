@@ -36,4 +36,17 @@ final class GifEncoderTests: XCTestCase {
         let encoder = GifEncoder()
         XCTAssertNil(encoder?.finalize())
     }
+
+    func testEncodesMoreThan100FramesWithoutCap() throws {
+        let encoder = try XCTUnwrap(GifEncoder())
+        for i in 0..<150 {
+            encoder.append(solidImage(gray: CGFloat(i % 2) * 0.8 + 0.1), delay: 0.02)
+        }
+        XCTAssertEqual(encoder.count, 150)
+
+        let data = try XCTUnwrap(encoder.finalize())
+
+        let src = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        XCTAssertEqual(CGImageSourceGetCount(src), 150)
+    }
 }

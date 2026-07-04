@@ -10,7 +10,7 @@ public final class GifEncoder {
 
     public init?(loopForever: Bool = true) {
         guard let dest = CGImageDestinationCreateWithData(
-            data as CFMutableData, UTType.gif.identifier as CFString, 100, nil
+            data as CFMutableData, UTType.gif.identifier as CFString, 0, nil
         ) else { return nil }
         destination = dest
         let gifProps: [CFString: Any] = [kCGImagePropertyGIFLoopCount: loopForever ? 0 : 1]
@@ -35,22 +35,19 @@ public final class GifEncoder {
 
     public func finalize() -> Data? {
         guard frameCount > 0, CGImageDestinationFinalize(destination) else { return nil }
-        var output = data as Data
 
         // Ensure GIF89a header for animated GIFs
-        if output.count >= 6 {
-            var bytes = [UInt8](output.prefix(6))
+        if data.length >= 6 {
+            var bytes = [UInt8](repeating: 0, count: 6)
+            data.getBytes(&bytes, length: 6)
             if bytes[0] == 71 && bytes[1] == 73 && bytes[2] == 70 { // "GIF"
                 if bytes[3] == 56 && bytes[4] == 55 { // "87"
-                    bytes[3] = 56 // "8"
                     bytes[4] = 57 // "9"
-                    let mutableOutput = NSMutableData(data: output)
-                    mutableOutput.replaceBytes(in: NSRange(location: 0, length: 6), withBytes: bytes)
-                    output = mutableOutput as Data
+                    data.replaceBytes(in: NSRange(location: 0, length: 6), withBytes: bytes)
                 }
             }
         }
 
-        return output
+        return data as Data
     }
 }
