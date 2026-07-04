@@ -90,6 +90,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func beginRecording(rect: CGRect, screen: NSScreen) {
+        isRecording = true
         overlay.enterRecordingMode()
         let (sourceRect, outputSize) = RegionRecorder.makeStreamRect(globalRect: rect, screen: screen)
         let fps = Config.fps
@@ -97,6 +98,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         RegionRecorder.display(for: screen) { [weak self] display in
             guard let self else { return }
             guard let display else {
+                self.isRecording = false
                 self.overlay.end()
                 HUD.flash("No display found")
                 return
@@ -105,7 +107,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             let recorder = RegionRecorder()
             self.encoder = encoder
             self.recorder = recorder
-            self.isRecording = true
 
             recorder.start(display: display, sourceRect: sourceRect, outputSize: outputSize, fps: fps,
                 onFrame: { [weak self] image, delay in
@@ -158,6 +159,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func abortRecording(message: String) {
+        guard isRecording else { return }
         isRecording = false
         if let escHotkeyID { hotkeys.unregister(escHotkeyID) }
         escHotkeyID = nil
