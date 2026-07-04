@@ -13,6 +13,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var escHotkeyID: UInt32?
     private var capTimer: Timer?
     private var isRecording = false
+    private var isFinishing = false
 
     public override init() { super.init() }
 
@@ -81,7 +82,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Flow
 
     private func startSelection() {
-        guard !isRecording else { return }
+        guard !isRecording, !isFinishing else { return }
         overlay.begin(onCommit: { [weak self] rect, screen in
             self?.beginRecording(rect: rect, screen: screen)
         }, onCancel: { [weak self] in
@@ -132,6 +133,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopRecording() {
         guard isRecording else { return }
         isRecording = false
+        isFinishing = true
         if let escHotkeyID { hotkeys.unregister(escHotkeyID) }
         escHotkeyID = nil
         capTimer?.invalidate()
@@ -153,6 +155,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                     } else {
                         HUD.flash("Nothing captured")
                     }
+                    self.isFinishing = false
                 }
             }
         }
