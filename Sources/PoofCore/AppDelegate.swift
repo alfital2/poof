@@ -14,6 +14,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var capTimer: Timer?
     private var isRecording = false
     private var isFinishing = false
+    private var lastRegion: CGRect?
 
     public override init() { super.init() }
 
@@ -134,6 +135,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func beginRecording(rect: CGRect, screen: NSScreen) {
         isRecording = true
+        lastRegion = rect
         overlay.enterRecordingMode()
         let (sourceRect, outputSize) = RegionRecorder.makeStreamRect(globalRect: rect, screen: screen)
         let fps = Config.fps
@@ -190,14 +192,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         recorder?.stop { [weak self] in
             guard let self else { return }
             self.encodeQueue.async {
+                let frames = encoder?.count ?? 0
                 let data = encoder?.finalize()
                 DispatchQueue.main.async {
                     self.overlay.end()
                     self.recorder = nil
                     self.encoder = nil
                     if let data, !data.isEmpty {
-                        Clipboard.copyGIF(data)
-                        HUD.flash("Copied ✓")
+                        NSLog("Poof: captured \(frames) frames, \(data.count) bytes")
+                        let url = Clipboard.copyGIF(data)
+                        if let url {
+                            DragThumb.show(gifURL: url, region: self.lastRegion)
+                        } else {
+                            HUD.flash("Copied ✓ · \(frames) frames")
+                        }
                     } else {
                         HUD.flash("Nothing captured")
                     }
