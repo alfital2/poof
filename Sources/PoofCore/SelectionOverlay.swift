@@ -134,7 +134,12 @@ public final class SelectionOverlay {
         for (window, view) in zip(windows, views) {
             view.mode = .recording
             window.ignoresMouseEvents = true
+            window.makeFirstResponder(nil)
         }
+        // Relinquish app activation so keyboard/focus returns to the app being
+        // recorded. Windows stay visible (screenSaver level) so the red
+        // outline remains even though we're no longer the active app.
+        NSApp.deactivate()
     }
 
     public func end() {

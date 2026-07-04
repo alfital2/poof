@@ -2,55 +2,171 @@ import AppKit
 import Carbon.HIToolbox
 
 public final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var statusItem: NSStatusItem?
     private let hotkeys = HotkeyManager()
     private let overlay = SelectionOverlay()
+    private var statusItem: NSStatusItem?
+
+    // Recording state
     private var recorder: RegionRecorder?
-    private var frameProbeCount = 0
+    private var encoder: GifEncoder?
+    private let encodeQueue = DispatchQueue(label: "com.poof.encode")
+    private var escHotkeyID: UInt32?
+    private var capTimer: Timer?
+    private var isRecording = false
 
     public override init() { super.init() }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
-        hotkeys.register(keyCode: 0x13, modifiers: UInt32(cmdKey | shiftKey)) { [self] in
-            self.overlay.begin(onCommit: { rect, screen in
-                NSLog("Poof: committed rect \(rect) on \(screen.localizedName)")
-                self.overlay.enterRecordingMode()
-                let (src, out) = RegionRecorder.makeStreamRect(globalRect: rect, screen: screen)
-                RegionRecorder.display(for: screen) { display in
-                    guard let display else { self.overlay.end(); return }
-                    let recorder = RegionRecorder()
-                    self.recorder = recorder
-                    self.frameProbeCount = 0
-                    recorder.start(display: display, sourceRect: src, outputSize: out,
-                                   fps: Config.fps, onFrame: { _, _ in
-                        self.frameProbeCount += 1
-                    }, onError: { error in
-                        NSLog("Poof: capture error \(error)")
-                        DispatchQueue.main.async { self.overlay.end() }
-                    })
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        recorder.stop {
-                            NSLog("Poof: captured \(self.frameProbeCount) frames")
-                            self.overlay.end()
-                            HUD.flash("\(self.frameProbeCount) frames")
-                        }
-                    }
-                }
-            }, onCancel: {
-                self.overlay.end()
-            })
+        hotkeys.register(keyCode: 0x13, modifiers: UInt32(cmdKey | shiftKey)) { [weak self] in
+            self?.startSelection()
         }
     }
+
+    // MARK: Menu bar
 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "scissors", accessibilityDescription: "Poof")
-        let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Poof", action: nil, keyEquivalent: ""))
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Poof", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        item.menu = menu
+        item.menu = buildMenu()
         self.statusItem = item
+    }
+
+    private func buildMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        let record = NSMenuItem(title: "Record Region", action: #selector(recordFromMenu),
+                                keyEquivalent: "2")
+        record.keyEquivalentModifierMask = [.command, .shift]
+        record.target = self
+        menu.addItem(record)
+
+        let rateItem = NSMenuItem(title: "Frame Rate", action: nil, keyEquivalent: "")
+        let rateMenu = NSMenu()
+        for fps in Config.availableFPS {
+            let sub = NSMenuItem(title: "\(fps) fps", action: #selector(setFPS(_:)), keyEquivalent: "")
+            sub.target = self
+            sub.tag = fps
+            sub.state = (fps == Config.fps) ? .on : .off
+            rateMenu.addItem(sub)
+        }
+        rateItem.submenu = rateMenu
+        menu.addItem(rateItem)
+
+        menu.addItem(.separator())
+        let perm = NSMenuItem(title: "Screen Recording Permission…",
+                              action: #selector(openScreenRecordingSettings), keyEquivalent: "")
+        perm.target = self
+        menu.addItem(perm)
+
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Quit Poof",
+                                action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        return menu
+    }
+
+    @objc private func recordFromMenu() { startSelection() }
+
+    @objc private func setFPS(_ sender: NSMenuItem) {
+        Config.fps = sender.tag
+        statusItem?.menu = buildMenu() // refresh checkmarks
+    }
+
+    @objc private func openScreenRecordingSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    // MARK: Flow
+
+    private func startSelection() {
+        guard !isRecording else { return }
+        overlay.begin(onCommit: { [weak self] rect, screen in
+            self?.beginRecording(rect: rect, screen: screen)
+        }, onCancel: { [weak self] in
+            self?.overlay.end()
+        })
+    }
+
+    private func beginRecording(rect: CGRect, screen: NSScreen) {
+        overlay.enterRecordingMode()
+        let (sourceRect, outputSize) = RegionRecorder.makeStreamRect(globalRect: rect, screen: screen)
+        let fps = Config.fps
+
+        RegionRecorder.display(for: screen) { [weak self] display in
+            guard let self else { return }
+            guard let display else {
+                self.overlay.end()
+                HUD.flash("No display found")
+                return
+            }
+            let encoder = GifEncoder()
+            let recorder = RegionRecorder()
+            self.encoder = encoder
+            self.recorder = recorder
+            self.isRecording = true
+
+            recorder.start(display: display, sourceRect: sourceRect, outputSize: outputSize, fps: fps,
+                onFrame: { [weak self] image, delay in
+                    self?.encodeQueue.async { encoder?.append(image, delay: delay) }
+                },
+                onError: { [weak self] error in
+                    NSLog("Poof: capture error \(error)")
+                    DispatchQueue.main.async { self?.abortRecording(message: "Grant Screen Recording") }
+                })
+
+            // Esc stops (Carbon hotkey, active only while recording).
+            self.escHotkeyID = self.hotkeys.register(keyCode: 0x35, modifiers: 0) { [weak self] in
+                self?.stopRecording()
+            }
+            // Safety cap.
+            self.capTimer = Timer.scheduledTimer(withTimeInterval: Config.maxDuration,
+                                                 repeats: false) { [weak self] _ in
+                self?.stopRecording()
+            }
+        }
+    }
+
+    private func stopRecording() {
+        guard isRecording else { return }
+        isRecording = false
+        if let escHotkeyID { hotkeys.unregister(escHotkeyID) }
+        escHotkeyID = nil
+        capTimer?.invalidate()
+        capTimer = nil
+
+        let recorder = self.recorder
+        let encoder = self.encoder
+        recorder?.stop { [weak self] in
+            guard let self else { return }
+            self.encodeQueue.async {
+                let data = encoder?.finalize()
+                DispatchQueue.main.async {
+                    self.overlay.end()
+                    self.recorder = nil
+                    self.encoder = nil
+                    if let data, !data.isEmpty {
+                        Clipboard.copyGIF(data)
+                        HUD.flash("Copied ✓")
+                    } else {
+                        HUD.flash("Nothing captured")
+                    }
+                }
+            }
+        }
+    }
+
+    private func abortRecording(message: String) {
+        isRecording = false
+        if let escHotkeyID { hotkeys.unregister(escHotkeyID) }
+        escHotkeyID = nil
+        capTimer?.invalidate()
+        capTimer = nil
+        recorder?.stop { }
+        recorder = nil
+        encoder = nil
+        overlay.end()
+        HUD.flash(message)
     }
 }
