@@ -53,9 +53,11 @@ public final class RegionRecorder: NSObject, SCStreamOutput {
     public static func display(for screen: NSScreen, completion: @escaping (SCDisplay?) -> Void) {
         let targetID = (screen.deviceDescription[
             NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
-        SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { content, _ in
+        SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { content, error in
+            if let error { NSLog("Poof: SCShareableContent error: \(error)") }
             let match = content?.displays.first { $0.displayID == targetID }
-            DispatchQueue.main.async { completion(match ?? content?.displays.first) }
+            if match == nil { NSLog("Poof: no SCDisplay matched NSScreenNumber \(String(describing: targetID))") }
+            DispatchQueue.main.async { completion(match) }
         }
     }
 
@@ -101,11 +103,13 @@ public final class RegionRecorder: NSObject, SCStreamOutput {
         guard type == .screen, sampleBuffer.isValid,
               let pixelBuffer = sampleBuffer.imageBuffer else { return }
 
-        // Only keep frames SCK marks as complete (skip idle/blank).
-        if let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
-            as? [[SCStreamFrameInfo: Any]],
-           let statusRaw = attachments.first?[.status] as? Int,
-           let status = SCFrameStatus(rawValue: statusRaw), status != .complete {
+        // Only keep frames SCK marks as complete (skip idle/blank). Fail closed:
+        // drop the frame unless the status is definitively .complete.
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
+                as? [[SCStreamFrameInfo: Any]],
+              let statusRaw = attachments.first?[.status] as? Int,
+              let status = SCFrameStatus(rawValue: statusRaw),
+              status == .complete else {
             return
         }
 
