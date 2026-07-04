@@ -30,8 +30,9 @@ private final class OverlayView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard mode == .selecting, let start = startPoint else { return }
         let p = convert(event.locationInWindow, from: nil)
-        currentRect = NSRect(x: min(start.x, p.x), y: min(start.y, p.y),
-                             width: abs(p.x - start.x), height: abs(p.y - start.y))
+        let cp = NSPoint(x: min(max(p.x, 0), bounds.width), y: min(max(p.y, 0), bounds.height))
+        currentRect = NSRect(x: min(start.x, cp.x), y: min(start.y, cp.y),
+                             width: abs(cp.x - start.x), height: abs(cp.y - start.y))
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -117,19 +118,17 @@ public final class SelectionOverlay {
                 let global = CGRect(x: rectInWindow.origin.x + screen.frame.origin.x,
                                     y: rectInWindow.origin.y + screen.frame.origin.y,
                                     width: rectInWindow.width, height: rectInWindow.height)
-                self.committedScreen = screen
                 self.onCommit?(global, screen)
             }
             view.onCancel = { [weak self] in self?.cancel() }
             window.contentView = view
             window.makeKeyAndOrderFront(nil)
+            window.makeFirstResponder(view)
             windows.append(window)
             views.append(view)
         }
         NSApp.activate(ignoringOtherApps: true)
     }
-
-    private var committedScreen: NSScreen?
 
     public func enterRecordingMode() {
         for (window, view) in zip(windows, views) {
@@ -139,6 +138,7 @@ public final class SelectionOverlay {
     }
 
     public func end() {
+        guard !windows.isEmpty else { return }
         for window in windows { window.orderOut(nil) }
         windows.removeAll()
         views.removeAll()
