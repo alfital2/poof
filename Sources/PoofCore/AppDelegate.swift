@@ -18,19 +18,36 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public override init() { super.init() }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
-        setupStatusItem()
+        if !Config.hideMenuBarIcon { showStatusItem() }
         hotkeys.register(keyCode: 0x13, modifiers: UInt32(cmdKey | shiftKey)) { [weak self] in
             self?.startSelection()
         }
     }
 
+    /// Re-opening Poof while it's already running (Finder/Spotlight/`open`) brings
+    /// the menu-bar icon back after it was hidden.
+    public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if Config.hideMenuBarIcon {
+            Config.hideMenuBarIcon = false
+            showStatusItem()
+            HUD.flash("Menu bar icon shown")
+        }
+        return true
+    }
+
     // MARK: Menu bar
 
-    private func setupStatusItem() {
+    private func showStatusItem() {
+        guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "scissors", accessibilityDescription: "Poof")
+        item.button?.image = StatusIcon.image()
         item.menu = buildMenu()
         self.statusItem = item
+    }
+
+    private func hideStatusItem() {
+        if let item = statusItem { NSStatusBar.system.removeStatusItem(item) }
+        statusItem = nil
     }
 
     private func buildMenu() -> NSMenu {
@@ -55,6 +72,19 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(rateItem)
 
         menu.addItem(.separator())
+
+        let launch = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin),
+                                keyEquivalent: "")
+        launch.target = self
+        launch.state = LaunchAtLogin.isEnabled ? .on : .off
+        menu.addItem(launch)
+
+        let hide = NSMenuItem(title: "Hide Menu Bar Icon", action: #selector(hideMenuBarIconAction),
+                              keyEquivalent: "")
+        hide.target = self
+        menu.addItem(hide)
+
+        menu.addItem(.separator())
         let perm = NSMenuItem(title: "Screen Recording Permission…",
                               action: #selector(openScreenRecordingSettings), keyEquivalent: "")
         perm.target = self
@@ -77,6 +107,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        let ok = LaunchAtLogin.setEnabled(!LaunchAtLogin.isEnabled)
+        if !ok { HUD.flash("Couldn't change Launch at Login") }
+        statusItem?.menu = buildMenu() // refresh checkmark
+    }
+
+    @objc private func hideMenuBarIconAction() {
+        Config.hideMenuBarIcon = true
+        hideStatusItem()
+        HUD.flash("Icon hidden — open Poof again to show it")
     }
 
     // MARK: Flow

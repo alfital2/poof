@@ -14,4 +14,11 @@ public enum Config {
         }
         set { UserDefaults.standard.set(newValue, forKey: "fps") }
     }
+
+    /// When true, the menu-bar icon is not shown at launch. Re-opening Poof
+    /// (launching it again) clears this and restores the icon.
+    public static var hideMenuBarIcon: Bool {
+        get { UserDefaults.standard.bool(forKey: "hideMenuBarIcon") }
+        set { UserDefaults.standard.set(newValue, forKey: "hideMenuBarIcon") }
+    }
 }
