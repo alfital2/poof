@@ -21,4 +21,22 @@ public enum Config {
         get { UserDefaults.standard.bool(forKey: "hideMenuBarIcon") }
         set { UserDefaults.standard.set(newValue, forKey: "hideMenuBarIcon") }
     }
+
+    /// Text inserted when a capture is dragged into an agent. `[PATH]` is
+    /// replaced with the GIF's file path (appended if the token is absent).
+    public static let defaultDragMessage = "for context, view this gif file at [PATH]"
+    public static var dragMessageTemplate: String {
+        get { UserDefaults.standard.string(forKey: "dragMessage") ?? defaultDragMessage }
+        set { UserDefaults.standard.set(newValue, forKey: "dragMessage") }
+    }
+
+    /// Whether each capture also puts the GIF on the clipboard (so it survives a
+    /// failed drag and can be pasted again). Defaults to true.
+    public static var keepGifOnClipboard: Bool {
+        get {
+            UserDefaults.standard.object(forKey: "keepGifOnClipboard") == nil
+                ? true : UserDefaults.standard.bool(forKey: "keepGifOnClipboard")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "keepGifOnClipboard") }
+    }
 }

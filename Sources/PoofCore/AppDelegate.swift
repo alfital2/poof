@@ -72,6 +72,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         rateItem.submenu = rateMenu
         menu.addItem(rateItem)
 
+        let keep = NSMenuItem(title: "Keep GIF on Clipboard", action: #selector(toggleKeepOnClipboard),
+                              keyEquivalent: "")
+        keep.target = self
+        keep.state = Config.keepGifOnClipboard ? .on : .off
+        menu.addItem(keep)
+
+        let msg = NSMenuItem(title: "Drag Message…", action: #selector(editDragMessage), keyEquivalent: "")
+        msg.target = self
+        menu.addItem(msg)
+
         menu.addItem(.separator())
 
         let launch = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin),
@@ -120,6 +130,34 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         Config.hideMenuBarIcon = true
         hideStatusItem()
         HUD.flash("Icon hidden — open Poof again to show it")
+    }
+
+    @objc private func toggleKeepOnClipboard() {
+        Config.keepGifOnClipboard.toggle()
+        statusItem?.menu = buildMenu()
+    }
+
+    @objc private func editDragMessage() {
+        let alert = NSAlert()
+        alert.messageText = "Drag Message"
+        alert.informativeText = "Text inserted when you drag a capture into an agent. Use [PATH] where the GIF's file path should go."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
+        field.stringValue = Config.dragMessageTemplate
+        field.placeholderString = Config.defaultDragMessage
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Reset to Default")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            Config.dragMessageTemplate = value.isEmpty ? Config.defaultDragMessage : value
+        case .alertSecondButtonReturn:
+            Config.dragMessageTemplate = Config.defaultDragMessage
+        default:
+            break
+        }
     }
 
     // MARK: Flow
@@ -200,11 +238,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.encoder = nil
                     if let data, !data.isEmpty {
                         NSLog("Poof: captured \(frames) frames, \(data.count) bytes")
-                        let url = Clipboard.copyGIF(data)
+                        let url = Clipboard.stageGIF(data)
+                        if Config.keepGifOnClipboard {
+                            Clipboard.copyGIF(data, fileURL: url)
+                        }
                         if let url {
                             DragThumb.show(gifURL: url, region: self.lastRegion)
                         } else {
-                            HUD.flash("Copied ✓ · \(frames) frames")
+                            HUD.flash("Captured · \(frames) frames")
                         }
                     } else {
                         HUD.flash("Nothing captured")

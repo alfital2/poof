@@ -102,7 +102,10 @@ private final class DragThumbView: NSView, NSDraggingSource {
         // agent's input (Claude Code, Cursor, ...), it inserts a line telling
         // the agent where to read the recording - the agent opens the file and
         // sees every frame, which a pasted image never conveys.
-        let text = "for context, view this gif file at \(url.path)"
+        let template = Config.dragMessageTemplate
+        let text = template.contains("[PATH]")
+            ? template.replacingOccurrences(of: "[PATH]", with: url.path)
+            : "\(template) \(url.path)"
         let item = NSDraggingItem(pasteboardWriter: text as NSString)
         let frame = preview?.frame ?? bounds
         item.setDraggingFrame(frame, contents: preview?.image)
