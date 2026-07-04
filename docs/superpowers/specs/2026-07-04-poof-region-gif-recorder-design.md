@@ -28,7 +28,9 @@ Named "Poof" — the recording vanishes into the clipboard, nothing left behind.
 
 ## Non-Goals (v1, YAGNI)
 
-- Preferences UI (fps/size/duration are compile-time constants).
+- Full preferences UI. Only **frame rate** is user-tweakable, via a menu-bar
+  submenu (presets, radio checkmark, persisted). `maxWidth` and `maxDuration`
+  stay compile-time constants.
 - Per-app / global optimized GIF palette (per-frame adaptive palette is fine).
 - File-reference on the clipboard (raw GIF data only — explicit user choice).
 - A region spanning multiple displays (selection is confined to one display).
@@ -69,14 +71,25 @@ LaunchAgent. Bundle id `com.poof.recorder`.
 
 | Module | Responsibility | Depends on |
 |---|---|---|
-| `AppDelegate` | NSApplication agent, menu-bar item, lifecycle, owns ⌘⇧2 | HotkeyManager, SelectionOverlay |
+| `AppDelegate` | NSApplication agent, menu-bar item + Frame Rate submenu, lifecycle, owns ⌘⇧2 | HotkeyManager, SelectionOverlay |
 | `HotkeyManager` | Carbon `RegisterEventHotKey`: ⌘⇧2 (always) + Esc (record only) | Carbon |
 | `SelectionOverlay` | Borderless transparent window per `NSScreen`; dim + even-odd mask hole at selection; crosshair; live size label; drag tracking; commit/cancel | AppKit, QuartzCore |
 | `RegionRecorder` | ScreenCaptureKit stream cropped to region; emits frames + timestamps | ScreenCaptureKit |
 | `GifEncoder` | ImageIO `CGImageDestination` (UTType.gif) → CFData in memory; per-frame delay from timestamp deltas; infinite loop | ImageIO |
 | `Clipboard` | `NSPasteboard` set `com.compuserve.gif` | AppKit |
 | `HUD` | Own small fade window for "Copied ✓" / errors (avoids notification permission) | AppKit |
-| `Config` | Constants: fps 15, maxWidth 900, maxDuration 60s, dim alpha 0.35 | — |
+| `Config` | `maxWidth` 900, `maxDuration` 60s, dim 0.35 (constants); `fps` read from `UserDefaults` (key `fps`, default 15) | Foundation |
+
+### Menu-bar menu
+
+Status-item click opens a menu:
+- **Record Region  ⌘⇧2** (invokes the same action as the hotkey)
+- **Frame Rate ▸** submenu: `10`, `15`, `20`, `30` fps as radio items; the active
+  one is check-marked. Selecting one writes `UserDefaults["fps"]` and updates the
+  checkmark. `Config.fps` reads this value at the start of each recording, so a
+  change takes effect on the next recording (no restart).
+- **Screen Recording Permission…** (opens the Privacy settings pane)
+- **Quit**
 
 ### Key technical decisions
 
