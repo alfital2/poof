@@ -21,6 +21,7 @@ public enum HUD {
         window.level = .screenSaver
         window.ignoresMouseEvents = true
         window.hasShadow = false
+        window.alphaValue = 0
 
         let container = NSView(frame: NSRect(origin: .zero, size: size))
         container.wantsLayer = true
