@@ -5,6 +5,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private let hotkeys = HotkeyManager()
     private let overlay = SelectionOverlay()
+    private var recorder: RegionRecorder?
+    private var frameProbeCount = 0
 
     public override init() { super.init() }
 
@@ -14,9 +16,26 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             self.overlay.begin(onCommit: { rect, screen in
                 NSLog("Poof: committed rect \(rect) on \(screen.localizedName)")
                 self.overlay.enterRecordingMode()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    self.overlay.end()
-                    HUD.flash("(recording would run here)")
+                let (src, out) = RegionRecorder.makeStreamRect(globalRect: rect, screen: screen)
+                RegionRecorder.display(for: screen) { display in
+                    guard let display else { self.overlay.end(); return }
+                    let recorder = RegionRecorder()
+                    self.recorder = recorder
+                    self.frameProbeCount = 0
+                    recorder.start(display: display, sourceRect: src, outputSize: out,
+                                   fps: Config.fps, onFrame: { _, _ in
+                        self.frameProbeCount += 1
+                    }, onError: { error in
+                        NSLog("Poof: capture error \(error)")
+                        DispatchQueue.main.async { self.overlay.end() }
+                    })
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        recorder.stop {
+                            NSLog("Poof: captured \(self.frameProbeCount) frames")
+                            self.overlay.end()
+                            HUD.flash("\(self.frameProbeCount) frames")
+                        }
+                    }
                 }
             }, onCancel: {
                 self.overlay.end()
