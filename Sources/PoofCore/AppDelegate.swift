@@ -137,8 +137,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.enterRecordingMode()
         let (sourceRect, outputSize) = RegionRecorder.makeStreamRect(globalRect: rect, screen: screen)
         let fps = Config.fps
+        // Exclude Poof's own outline overlay from the capture so it never bleeds
+        // into the GIF (captured after enterRecordingMode while the windows exist).
+        let excludedWindows = overlay.overlayWindowNumbers
 
-        RegionRecorder.display(for: screen) { [weak self] display in
+        RegionRecorder.resolve(screen: screen, excludingWindowNumbers: excludedWindows) { [weak self] display, excludeWindows in
             guard let self else { return }
             guard let display else {
                 self.isRecording = false
@@ -151,7 +154,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             self.encoder = encoder
             self.recorder = recorder
 
-            recorder.start(display: display, sourceRect: sourceRect, outputSize: outputSize, fps: fps,
+            recorder.start(display: display, excludingWindows: excludeWindows,
+                           sourceRect: sourceRect, outputSize: outputSize, fps: fps,
                 onFrame: { [weak self] image, delay in
                     self?.encodeQueue.async { encoder?.append(image, delay: delay) }
                 },

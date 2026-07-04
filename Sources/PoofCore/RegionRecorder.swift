@@ -50,27 +50,34 @@ public final class RegionRecorder: NSObject, SCStreamOutput {
 
     // MARK: Display resolution
 
-    public static func display(for screen: NSScreen, completion: @escaping (SCDisplay?) -> Void) {
+    /// Resolves the `SCDisplay` for a screen and the `SCWindow`s matching the
+    /// given AppKit window numbers (so they can be excluded from the capture —
+    /// used to keep Poof's own recording-outline overlay out of the GIF).
+    public static func resolve(screen: NSScreen, excludingWindowNumbers excluded: [Int],
+                               completion: @escaping (SCDisplay?, [SCWindow]) -> Void) {
         let targetID = (screen.deviceDescription[
             NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+        let excludedIDs = Set(excluded.map { CGWindowID($0) })
         SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { content, error in
             if let error { NSLog("Poof: SCShareableContent error: \(error)") }
             let match = content?.displays.first { $0.displayID == targetID }
             if match == nil { NSLog("Poof: no SCDisplay matched NSScreenNumber \(String(describing: targetID))") }
-            DispatchQueue.main.async { completion(match) }
+            let excludeWindows = content?.windows.filter { excludedIDs.contains($0.windowID) } ?? []
+            DispatchQueue.main.async { completion(match, excludeWindows) }
         }
     }
 
     // MARK: Capture
 
-    public func start(display: SCDisplay, sourceRect: CGRect, outputSize: CGSize, fps: Int,
+    public func start(display: SCDisplay, excludingWindows: [SCWindow],
+                      sourceRect: CGRect, outputSize: CGSize, fps: Int,
                       onFrame: @escaping (CGImage, Double) -> Void,
                       onError: @escaping (Error) -> Void) {
         self.onFrame = onFrame
         self.fallbackFPS = fps
         self.lastPTS = nil
 
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let filter = SCContentFilter(display: display, excludingWindows: excludingWindows)
         let config = SCStreamConfiguration()
         config.sourceRect = sourceRect
         config.width = Int(outputSize.width)

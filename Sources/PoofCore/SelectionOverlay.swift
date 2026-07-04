@@ -15,6 +15,13 @@ private final class OverlayView: NSView {
     private var currentRect: NSRect? { didSet { needsDisplay = true } }
     private(set) var committedRect: NSRect?
 
+    /// 0…1 breathing value driving the recording-frame glow.
+    var pulse: CGFloat = 1
+    func setPulse(_ p: CGFloat) {
+        pulse = p
+        if let sel = committedRect { setNeedsDisplay(sel.insetBy(dx: -30, dy: -30)) }
+    }
+
     override var acceptsFirstResponder: Bool { true }
 
     override func resetCursorRects() {
@@ -64,12 +71,32 @@ private final class OverlayView: NSView {
                 NSBezierPath(rect: bounds).fill()
             }
         case .recording:
-            if let sel = committedRect {
-                NSColor.systemRed.setStroke()
-                let border = NSBezierPath(rect: sel)
-                border.lineWidth = 2
-                border.stroke()
-            }
+            guard let sel = committedRect else { break }
+            // Sharp rectangle (truthfully matches the captured region), sitting
+            // just outside it, in a vivid coral-red with a soft breathing glow.
+            // The overlay window is excluded from the SCStream, so neither the
+            // line nor the glow ever appears in the GIF.
+            let red = NSColor(srgbRed: 1.0, green: 0.27, blue: 0.22, alpha: 1.0)
+            let frameRect = sel.insetBy(dx: -1.5, dy: -1.5)
+
+            guard let ctx = NSGraphicsContext.current else { break }
+            ctx.saveGraphicsState()
+            let glow = NSShadow()
+            glow.shadowColor = red.withAlphaComponent(0.55 + 0.40 * pulse)
+            glow.shadowBlurRadius = 12 + 18 * pulse
+            glow.shadowOffset = .zero
+            glow.set()
+            red.setStroke()
+            let glowPath = NSBezierPath(rect: frameRect)
+            glowPath.lineWidth = 3
+            glowPath.stroke()
+            ctx.restoreGraphicsState()
+
+            // Crisp line on top (no shadow) so the edge stays sharp.
+            red.setStroke()
+            let crisp = NSBezierPath(rect: frameRect)
+            crisp.lineWidth = 2.5
+            crisp.stroke()
         }
     }
 
@@ -92,8 +119,14 @@ public final class SelectionOverlay {
     private var views: [OverlayView] = []
     private var onCommit: ((CGRect, NSScreen) -> Void)?
     private var onCancel: (() -> Void)?
+    private var pulseTimer: Timer?
+    private var pulsePhase: CGFloat = 0
 
     public init() {}
+
+    /// AppKit window numbers of the overlay windows — used to exclude Poof's own
+    /// recording outline from the ScreenCaptureKit stream.
+    public var overlayWindowNumbers: [Int] { windows.map { $0.windowNumber } }
 
     public func begin(onCommit: @escaping (CGRect, NSScreen) -> Void,
                       onCancel: @escaping () -> Void) {
@@ -136,6 +169,7 @@ public final class SelectionOverlay {
             window.ignoresMouseEvents = true
             window.makeFirstResponder(nil)
         }
+        startPulse()
         // Relinquish app activation so keyboard/focus returns to the app being
         // recorded. Windows stay visible (screenSaver level) so the red
         // outline remains even though we're no longer the active app.
@@ -143,10 +177,33 @@ public final class SelectionOverlay {
     }
 
     public func end() {
+        stopPulse()
         guard !windows.isEmpty else { return }
         for window in windows { window.orderOut(nil) }
         windows.removeAll()
         views.removeAll()
+    }
+
+    // MARK: Recording-frame pulse
+
+    private func startPulse() {
+        pulseTimer?.invalidate()
+        pulsePhase = 0
+        // ~1.4s breathing cycle at 30fps. Runs on the main runloop, which keeps
+        // firing while recording even though the app is deactivated.
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.pulsePhase += (2 * .pi) / (1.4 * 30)
+            let p = (sin(self.pulsePhase) + 1) / 2   // 0…1
+            for view in self.views { view.setPulse(p) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pulseTimer = timer
+    }
+
+    private func stopPulse() {
+        pulseTimer?.invalidate()
+        pulseTimer = nil
     }
 
     private func cancel() {
