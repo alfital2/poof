@@ -10,8 +10,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         hotkeys.register(keyCode: 0x13, modifiers: UInt32(cmdKey | shiftKey)) {
-            NSSound.beep()
-            NSLog("Poof: hotkey fired")
+            HUD.flash("Poof ✓")
         }
     }
 
