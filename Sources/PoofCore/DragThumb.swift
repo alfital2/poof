@@ -56,7 +56,7 @@ public enum DragThumb {
         view.addSubview(iv)
         view.preview = iv
 
-        let caption = NSTextField(labelWithString: "Copied ✓   drag me into your chat")
+        let caption = NSTextField(labelWithString: "Copied ✓   drag me into your agent")
         caption.font = .systemFont(ofSize: 11, weight: .medium)
         caption.textColor = .white
         caption.alignment = .center
@@ -98,9 +98,12 @@ private final class DragThumbView: NSView, NSDraggingSource {
         guard let url = gifURL else { return }
         dismissTimer?.invalidate()
         dismissTimer = nil
-        // Drag the real file URL. Browsers and AI chats accept dragged files
-        // (they land in the drop's file list) and attach the animated .gif.
-        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+        // Drag a text instruction pointing at the GIF file. Dropped into an
+        // agent's input (Claude Code, Cursor, ...), it inserts a line telling
+        // the agent where to read the recording - the agent opens the file and
+        // sees every frame, which a pasted image never conveys.
+        let text = "for context, view this gif file at \(url.path)"
+        let item = NSDraggingItem(pasteboardWriter: text as NSString)
         let frame = preview?.frame ?? bounds
         item.setDraggingFrame(frame, contents: preview?.image)
         beginDraggingSession(with: [item], event: event, source: self)
